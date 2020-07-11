@@ -605,7 +605,7 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
 #ifdef CONFIG_SMP
 
 #include "sched-pelt.h"
-#define entity_is_task(se)	(!se->my_q)
+#define entity_is_task(se)	rt_entity_is_task(se)
 
 extern u64 decay_load(u64 val, u64 n);
 
@@ -2051,6 +2051,7 @@ static void remove_rt_entity_load_avg(struct sched_rt_entity *rt_se)
 	atomic_long_add(rt_se->avg.util_avg, &rt_rq->removed_util_avg);
 }
 
+#ifdef CONFIG_RT_GROUP_SCHED
 static void attach_task_rt_rq(struct task_struct *p)
 {
 	struct sched_rt_entity *rt_se = &p->rt;
@@ -2060,6 +2061,7 @@ static void attach_task_rt_rq(struct task_struct *p)
 	update_rt_load_avg(now, rt_se);
 	attach_rt_entity_load_avg(rt_rq, rt_se);
 }
+#endif
 
 static void detach_task_rt_rq(struct task_struct *p)
 {
@@ -2352,11 +2354,15 @@ static void put_prev_task_rt(struct rq *rq, struct task_struct *p)
 
 #ifdef CONFIG_SMP
 
+#ifdef CONFIG_RT_GROUP_SCHED
 void rt_rq_util_change(struct rt_rq *rt_rq)
 {
 	if (&this_rq()->rt == rt_rq)
 		cpufreq_update_util(rt_rq->rq, SCHED_CPUFREQ_RT);
 }
+#else
+void rt_rq_util_change(struct rt_rq *rt_rq) { }
+#endif
 
 #ifdef CONFIG_RT_GROUP_SCHED
 /* Take into account change of utilization of a child task group */
@@ -2422,15 +2428,15 @@ static inline int test_and_clear_tg_rt_propagate(struct sched_rt_entity *rt_se)
 }
 
 /* Update task and its cfs_rq load average */
-static inline int propagate_entity_rt_load_avg(struct sched_rt_entity *rt_se)
+static inline void propagate_entity_rt_load_avg(struct sched_rt_entity *rt_se)
 {
 	struct rt_rq *rt_rq;
 
 	if (rt_entity_is_task(rt_se))
-		return 0;
+		return;
 
 	if (!test_and_clear_tg_rt_propagate(rt_se))
-		return 0;
+		return;
 
 	rt_rq = rt_rq_of_se(rt_se);
 
@@ -2439,10 +2445,9 @@ static inline int propagate_entity_rt_load_avg(struct sched_rt_entity *rt_se)
 	update_tg_rt_util(rt_rq, rt_se);
 	update_tg_rt_load(rt_rq, rt_se);
 
-	return 1;
 }
 #else
-static inline int propagate_entity_rt_load_avg(struct sched_rt_entity *rt_se) { };
+static inline void propagate_entity_rt_load_avg(struct sched_rt_entity *rt_se) { };
 #endif
 
 void update_rt_load_avg(u64 now, struct sched_rt_entity *rt_se)
